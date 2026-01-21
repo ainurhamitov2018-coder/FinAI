@@ -1,0 +1,62 @@
+# Зависимости
+node_modules/
+.pnp/
+.pnp.js
+
+# Сборка
+.next/
+out/
+build/
+dist/
+
+# База данных (SQLite)
+*.db
+*.db-journal
+prisma/dev.db
+prisma/dev.db-journal
+
+# Переменные окружения (ВАЖНО - содержат секреты!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# Логи
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Тестовые и временные файлы
+*.log
+*.tmp
+*.temp
+
+# Парсенные данные (можно оставить, но лучше генерировать заново)
+scripts/out_parsed.json
+
+# Проверочные скрипты (не нужны в репозитории)
+check-db.js
+fix-*.js
+merge-users.js
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Misc
+*.pem

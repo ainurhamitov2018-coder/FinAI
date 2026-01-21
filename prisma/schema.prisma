@@ -1,0 +1,103 @@
+// Prisma схема для базы данных
+// Будет использоваться на ЭТАПЕ 2 (Backend)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Модель пользователя
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  cardNumber String?  @unique @map("card_number")
+  passwordHash String @map("password_hash")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  accounts       Account[]
+  transactions   Transaction[]
+  aiChatHistory  AIChatHistory[]
+
+  @@map("users")
+}
+
+// Модель счета
+model Account {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  balance   Float    @default(0)
+  currency  String   @default("RUB")
+  type      String   // "checking" | "savings" | "credit"
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("accounts")
+}
+
+// Модель категории
+model Category {
+  id   String @id @default(uuid())
+  name String
+  type String // "income" | "expense"
+  icon String?
+  color String?
+
+  transactions Transaction[]
+
+  @@map("categories")
+}
+
+// Модель транзакции
+model Transaction {
+  id          String   @id @default(uuid())
+  accountId   String   @map("account_id")
+  userId      String   @map("user_id") // Добавляем этот столбец
+  amount      Float
+  type        String   // "income" | "expense"
+  categoryId  String   @map("category_id")
+  description String
+  date        DateTime
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Определяем связь
+
+  @@map("transactions")
+}
+
+// Модель истории AI чата
+model AIChatHistory {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  message   String
+  response  String
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_chat_history")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
