@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { GroqClient } from "@/lib/groq-client";
+import { GigaChatClient } from "@/lib/groq-client";
 import fs from 'fs';
 import path from 'path';
 
@@ -21,15 +21,20 @@ export async function POST(request: NextRequest) {
       try { parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8')); } catch (e) { parsed = null; }
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.GIGACHAT_AUTH_KEY;
+    const baseUrl = process.env.GIGACHAT_BASE_URL || 'https://gigachat.devices.sberbank.ru/api/v1';
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Groq API key not configured" },
+        { error: "GigaChat auth key not configured" },
         { status: 500 }
       );
     }
 
-    const groq = new GroqClient({ apiKey });
+    const groq = new GigaChatClient({ 
+      authKey: apiKey,
+      baseUrl,
+      model: process.env.GIGACHAT_MODEL
+    });
 
     // Построим реальный запрос на анализ на основе файла или fallback
     let transactionSummary = {
@@ -46,41 +51,79 @@ export async function POST(request: NextRequest) {
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const monthProgress = currentDay / daysInMonth;
 
+    function getMonthRange(date: Date) {
+      return {
+        start: new Date(date.getFullYear(), date.getMonth(), 1),
+        end: new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59),
+      };
+    }
+
+    function parseTransactionDate(tx: any) {
+      return tx.operationDate ? new Date(tx.operationDate) : tx.processedDate ? new Date(tx.processedDate) : null;
+    }
+
+    function isTransferCategory(category: string) {
+      return category.toLowerCase().includes('transfer') || category.toLowerCase().includes('перевод');
+    }
+
+    function filterTransactions(transactions: any[], start: Date, end: Date) {
+      return transactions
+        .map((t: any) => ({
+          date: parseTransactionDate(t),
+          description: (t.description || '').replace(/\n+/g, ' '),
+          amount: Number(t.amount || 0),
+          category: t.category || 'other',
+          type: t.type || (Number(t.amount || 0) < 0 ? 'expense' : 'income'),
+        }))
+        .filter((t: any) => {
+          if (!t.date) return false;
+          const txDate = new Date(t.date);
+          return txDate >= start && txDate <= end;
+        })
+        .filter((t: any) => !isTransferCategory(t.category) && !t.description.toLowerCase().includes('переводы через сбп'));
+    }
+
+    function findLastExpenseMonth(transactions: any[]) {
+      const expenseTx = transactions
+        .map((t: any) => ({ ...t, date: parseTransactionDate(t) }))
+        .filter((t: any) => t.date && (t.type === 'expense' || Number(t.amount || 0) < 0))
+        .sort((a: any, b: any) => b.date.getTime() - a.date.getTime());
+
+      if (!expenseTx.length) return null;
+      return getMonthRange(expenseTx[0].date);
+    }
+
     let periodStart: Date;
     let periodEnd: Date = now;
-    
     if (monthProgress <= 0.5) {
-      // Начало месяца - используем прошлый месяц
       periodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       periodEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-    } else if (monthProgress > 0.5 && monthProgress < 0.8) {
-      // Больше половины месяца - используем прошлый + текущий
+    } else if (monthProgress < 0.8) {
       periodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       periodEnd = now;
     } else {
-      // Ближе к концу месяца - используем текущий месяц
       periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
       periodEnd = now;
     }
 
     let txs: any[] = [];
+    let selectedPeriod = { start: periodStart, end: periodEnd };
     if (parsed && parsed.transactions) {
-      // Фильтруем транзакции по выбранному периоду
-      txs = parsed.transactions
-        .map((t: any) => ({
-          date: t.operationDate || t.processedDate || null,
-          description: (t.description || '').replace(/\n+/g, ' '),
-          amount: Number(t.amount || 0),
-          category: t.category || 'other',
-          type: t.type || (t.amount < 0 ? 'expense' : 'income'),
-        }))
-        .filter((t: any) => {
-          if (!t.date) return false;
-          const txDate = new Date(t.date);
-          return txDate >= periodStart && txDate <= periodEnd;
-        })
-        // Исключаем переводы (transfer) из анализа
-        .filter((t: any) => t.category !== 'transfer' && !t.description.toLowerCase().includes('переводы через сбп'));
+      txs = filterTransactions(parsed.transactions, periodStart, periodEnd);
+
+      if (!txs.length) {
+        const previousPeriod = getMonthRange(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+        txs = filterTransactions(parsed.transactions, previousPeriod.start, previousPeriod.end);
+        selectedPeriod = previousPeriod;
+      }
+
+      if (!txs.length) {
+        const fallbackPeriod = findLastExpenseMonth(parsed.transactions);
+        if (fallbackPeriod) {
+          txs = filterTransactions(parsed.transactions, fallbackPeriod.start, fallbackPeriod.end);
+          selectedPeriod = fallbackPeriod;
+        }
+      }
 
       const filteredIncome = txs.filter((t:any)=>t.type==='income').reduce((s:number,t:any)=>s+t.amount,0);
       const filteredExpenses = txs.filter((t:any)=>t.type==='expense').reduce((s:number,t:any)=>s+t.amount,0);
@@ -90,9 +133,9 @@ export async function POST(request: NextRequest) {
         totalExpenses: filteredExpenses,
         netBalance: filteredIncome - filteredExpenses,
         currency: 'RUB',
-        period: { 
-          start: periodStart.toISOString().split('T')[0], 
-          end: periodEnd.toISOString().split('T')[0] 
+        period: {
+          start: selectedPeriod.start.toISOString().split('T')[0],
+          end: selectedPeriod.end.toISOString().split('T')[0],
         },
       };
     }
