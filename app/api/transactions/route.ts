@@ -135,6 +135,7 @@ export const POST = requireAuth(async (req: AuthenticatedRequest) => {
     // Создание транзакции
     const transaction = await prisma.transaction.create({
       data: {
+        userId: req.userId!,
         accountId,
         amount: type === "expense" ? -Math.abs(amount) : Math.abs(amount),
         type,

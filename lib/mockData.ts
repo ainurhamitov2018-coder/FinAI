@@ -28,10 +28,10 @@ export const mockAccounts: Account[] = [
     id: "1",
     userId: "user1",
     name: "Основной счет",
-    balance: parsed?.summary?.endBalance ?? 125000.5,
+    balance: 125000.5,
     currency: "RUB",
     type: "checking",
-    createdAt: new Date(parsed?.summary?.periodStart ?? "2024-01-15"),
+    createdAt: new Date("2024-01-15"),
   },
 ];
 
@@ -84,9 +84,9 @@ export const mockTransactions: Transaction[] = (parsed?.transactions || []).map(
 });
 
 export const mockAnalytics: AnalyticsData = {
-  totalIncome: parsed?.summary?.income ?? 0,
-  totalExpenses: parsed?.summary?.expenses ?? 0,
-  balance: parsed?.summary?.endBalance ?? mockAccounts[0].balance,
+  totalIncome: 2500,
+  totalExpenses: 2251.56,
+  balance: 125000.5,
   expensesByCategory: [],
   monthlyTrend: [],
 };

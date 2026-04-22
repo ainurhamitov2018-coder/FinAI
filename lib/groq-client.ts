@@ -1,12 +1,14 @@
 /**
- * Groq AI Integration Service
+ * AI Integration Service (GigaChat)
  * 
  * Используется для анализа финансовых данных и предоставления рекомендаций
- * через Groq API (OpenAI-совместимый)
+ * через GigaChat API
  */
 
-interface GroqConfig {
-  apiKey: string;
+import axios from 'axios';
+
+interface GigaChatConfig {
+  authKey?: string;
   baseUrl?: string;
   model?: string;
 }
@@ -79,6 +81,12 @@ const categoryTranslations: Record<string, string> = {
   'salary': 'Зарплата',
   'cashback': 'Кэшбэк',
   'refund': 'Возврат',
+  'groceries': 'Продукты',
+  'transfer_out': 'Переводы',
+  'transfer_in': 'Переводы',
+  'taxi': 'Такси',
+  'transportation': 'Транспорт',
+  'food_delivery': 'Доставка еды',
 };
 
 function translateCategory(category: string): string {
@@ -95,15 +103,39 @@ function translateCategories(
   }));
 }
 
-class GroqClient {
-  private apiKey: string;
+class GigaChatClient {
+  private authKey: string;
   private baseUrl: string;
   private model: string;
+  private accessToken: string | null = null;
+  private expiresAt: number = 0;
 
-  constructor(config: GroqConfig) {
-    this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl || 'https://api.groq.com/openai/v1';
-    this.model = config.model || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  constructor(config: GigaChatConfig) {
+    this.authKey = config.authKey || '';
+    this.baseUrl = config.baseUrl || 'https://gigachat.devices.sberbank.ru/api/v1';
+    this.model = config.model || 'GigaChat-Max';
+  }
+
+  private async getAccessToken(): Promise<string> {
+    if (this.accessToken && Date.now() < this.expiresAt - 60000) { // 1 min buffer
+      return this.accessToken;
+    }
+
+    const rqUID = 'f1d27f13-af6b-432a-abee-43e8ebf5da98'; // Use fixed UUID for simplicity
+    const response = await axios.post('https://ngw.devices.sberbank.ru:9443/api/v2/oauth', 'scope=GIGACHAT_API_PERS', {
+      headers: {
+        'Authorization': `Basic ${this.authKey}`,
+        'RqUID': rqUID,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
+      proxy: false
+    });
+
+    this.accessToken = response.data.access_token;
+    this.expiresAt = response.data.expires_at;
+    return this.accessToken!;
   }
 
   /**
@@ -123,7 +155,7 @@ class GroqClient {
     };
     
     const prompt = this.buildFinancialAnalysisPrompt(translatedRequest);
-    return this.callGroqAPI(prompt);
+    return this.callGigaChatAPI(prompt);
   }
 
   /**
@@ -140,30 +172,30 @@ class GroqClient {
       .map(e => `${e.category}: ${Math.abs(e.amount).toFixed(2)} ₽ (${e.percentage.toFixed(1)}%)`)
       .join('\n');
 
-    const prompt = `Ты - финансовый консультант, который помогает людям развивать финансовую грамотность и экономить деньги.
+    const prompt = `Ты — финансовый консультант по экономии бюджета. Ответь только на русском.
+Используй только данные об этих расходах и не добавляй ничего лишнего.
 
-Общие расходы за анализируемый период: ${Math.abs(budget).toFixed(2)} ₽
-
-Расходы по категориям:
+Расходы:
 ${expenseText}
 
-ВАЖНО - Инструкции к ответу:
-1. ФОКУС НА ФИНАНСОВОЙ ГРАМОТНОСТИ: Объясняй не только ЧТО делать, но и ПОЧЕМУ это важно. Включай краткие уроки о принципах экономии.
-2. КОНКРЕТНЫЕ СОВЕТЫ: Дай 5-7 практических рекомендаций с конкретными примерами из категорий расходов пользователя.
-3. ИЗБЕГАЙ: Не упоминай переводы между людьми, имена получателей, личные отношения. Фокусируйся на категориях расходов и паттернах поведения.
-4. ИЗМЕРИМЫЕ РЕЗУЛЬТАТЫ: Для каждой рекомендации укажи потенциальную экономию в рублях в месяц.
-5. ПРОСТЫЕ ДЕЙСТВИЯ: Каждая рекомендация должна иметь конкретный первый шаг, который можно сделать прямо сейчас.
-6. ОБУЧЕНИЕ: Включай краткие объяснения финансовых принципов (например, "правило 50/30/20", важность резервного фонда).
-7. ИСПОЛЬЗУЙ РУССКИЕ НАЗВАНИЯ КАТЕГОРИЙ: Все категории должны быть на русском языке.
+Задача:
+1. Найди 3-4 категории с наибольшим потенциалом экономии.
+2. Для каждой категории укажи:
+   - Текущую трата
+   - Конкретное изменение
+   - Потенциальную экономию в месяц, руб.
+3. Если можно, сравни альтернативы: такси → общественный транспорт, доставка еды → готовка дома, подписка → отказ/дешёвая замена.
 
 Формат ответа:
-- Краткий анализ текущей ситуации (2-3 предложения)
-- Список рекомендаций с обоснованием и потенциальной экономией
-- Краткий урок финансовой грамотности (1-2 абзаца)
+1) Категория: ...
+   - Текущая трата: ...
+   - Совет: ...
+   - Экономия: ...
+2) ...
 
-Напиши на русском языке, используй дружелюбный и обучающий тон.`;
+Ни слова на английском. Не повторяй текст задачи.`;
 
-    return this.callGroqAPI(prompt);
+    return this.callGigaChatAPI(prompt);
   }
 
   /**
@@ -180,21 +212,26 @@ ${expenseText}
       .map(e => `${e.category}: ${Math.abs(e.amount).toFixed(2)} ₽`)
       .join('\n');
 
-    const prompt = `Ты - финансовый аналитик. На основе расходов пользователя за прошлый период, спрогнозируй расходы на следующие ${months} месяца.
+    const prompt = `Ты — финансовый аналитик. Ответь только на русском.
+Используй только эту информацию и не добавляй новые даты.
 
-История расходов по категориям:
+Расходы по категориям:
 ${dataText}
 
-Дай прогноз на русском языке с указанием:
-1. Ожидаемых расходов по категориям (используй русские названия категорий)
-2. Трендов (растут/падают/стабильны)
-3. Рисков и возможностей экономии
-4. Рекомендаций по планированию бюджета
-5. Советов по созданию финансовой подушки безопасности
+Задача:
+1. Спрогнозируй расходы на следующие ${months} месяца по каждой категории.
+2. Для каждой категории поясни, почему прогноз меняется: сезонность, праздники, погодные условия, события или личные расходы (например 8 марта, 14 февраля, день рождения, осенние дожди и т.п.).
+3. Укажи тренд: ↑ растет, ↓ падает, → стабильно.
+4. Назови 1-2 категории с самым большим ростом расходов.
+5. Дай один короткий совет для контроля бюджета.
 
-Будь конкретен, используй цифры в рублях. Все категории называй на русском языке.`;
+Формат ответа:
+- Категория: прогноз/тренд + причина
+- Совет: ...
 
-    return this.callGroqAPI(prompt);
+Ни слова на английском.`;
+
+    return this.callGigaChatAPI(prompt);
   }
 
   /**
@@ -205,39 +242,38 @@ ${dataText}
     savingsRate: number,
     riskTolerance: 'low' | 'medium' | 'high'
   ): Promise<string> {
-    const riskTranslation = {
-      'low': 'низкая (консервативный инвестор)',
-      'medium': 'средняя (умеренный инвестор)',
-      'high': 'высокая (агрессивный инвестор)',
+    const riskMap = {
+      'low': 'Низкий (банки, вклады)',
+      'medium': 'Средний (облигации, ETF)',
+      'high': 'Высокий (акции)',
     };
     
-    const prompt = `Ты - финансовый консультант по инвестициям. Помоги пользователю разобраться, как приумножить деньги.
+    const prompt = `Ты — инвестиционный консультант. Ответь только на русском. Используй только эти данные и не добавляй ничего лишнего.
 
-Исходные данные:
-- Доступно для инвестирования: ${availableMoney.toFixed(2)} ₽
-- Ежемесячно может откладывать: ${savingsRate.toFixed(2)} ₽
-- Готовность к риску: ${riskTranslation[riskTolerance]}
+Доступно: ${availableMoney.toFixed(2)} ₽
+Можно откладывать: ${savingsRate.toFixed(2)} ₽ в месяц
+Риск: ${riskMap[riskTolerance]}
 
-Дай конкретные рекомендации на русском языке:
+Задача:
+1. Назови сумму для резервного фонда (3-6 месяцев расходов).
+2. Предложи распределение средств по инструментам в % и рублях — без использования таблиц markdown. Используй список с дефисом, указав каждый инструмент на отдельной строке с процентом и суммой.
+3. Дай 2-3 конкретных инвестиционных варианта.
+4. Укажи первый конкретный шаг.
+5. Обязательно включи дисклеймер: «Это не является индивидуальной инвестиционной рекомендацией.»
 
-1. ФИНАНСОВАЯ ПОДУШКА: Объясни важность резервного фонда (3-6 месячных расходов) перед началом инвестирования.
+Формат:
+- Резервный фонд: ...
+- План распределения:
+  - Инструмент 1: XX% (YYY₽)
+  - Инструмент 2: XX% (YYY₽)
+  - Инструмент 3: XX% (YYY₽)
+- Конкретные варианты: ...
+- Первый шаг: ...
+- Дисклеймер: ...
 
-2. ИНСТРУМЕНТЫ ДЛЯ НАЧИНАЮЩИХ: Перечисли подходящие инструменты для данного уровня риска:
-   - Для низкого риска: банковские вклады, ОФЗ, накопительные счета
-   - Для среднего риска: облигации, ETF на индексы, ПИФы
-   - Для высокого риска: акции, криптовалюты (с оговорками о рисках)
+Ни слова на английском. Используй только рубли (₽), без долларов.`;
 
-3. КОНКРЕТНЫЙ ПЛАН: Предложи распределение средств по инструментам с указанием процентов и сумм.
-
-4. РЕГУЛЯРНЫЕ ИНВЕСТИЦИИ: Объясни стратегию усреднения (DCA) и как использовать ежемесячные сбережения.
-
-5. НАЛОГИ И ИИС: Расскажи про индивидуальный инвестиционный счёт и налоговые вычеты.
-
-6. ПРЕДУПРЕЖДЕНИЯ: Укажи на типичные ошибки начинающих инвесторов.
-
-Ответ должен быть практичным, с конкретными цифрами в рублях.`;
-
-    return this.callGroqAPI(prompt);
+    return this.callGigaChatAPI(prompt);
   }
 
   /**
@@ -256,126 +292,94 @@ ${dataText}
     };
     
     const prompt = this.buildSpendingAnalysisPrompt(translatedRequest);
-    return this.callGroqAPI(prompt);
+    return this.callGigaChatAPI(prompt);
   }
 
   private buildFinancialAnalysisPrompt(
     request: FinancialAnalysisRequest
   ): string {
     const topCategories = request.topExpenseCategories
+      .slice(0, 5)
       .map(c => `${c.category}: ${Math.abs(c.amount).toFixed(2)} ₽ (${c.percentage.toFixed(1)}%)`)
       .join('\n');
 
-    // Include merchants if available
-    const merchantsText = (request as any).topMerchants 
-      ? (request as any).topMerchants.map((m:any) => `${m.merchant}: ${Math.abs(m.amount).toFixed(2)} ₽`).join('\n') 
-      : '';
+    return `Ты — персональный финансовый консультант. У тебя есть история доходов, расходов и последние категории расходов за последний доступный период. Используй только эти данные и не делай выводов про неизвестные даты.
 
-    return `Ты - финансовый консультант, который помогает людям развивать финансовую грамотность. Проанализируй финансовые данные и дай практические советы для улучшения финансового здоровья.
+Период для анализа: ${request.transactionSummary.period.start} — ${request.transactionSummary.period.end}
+Доход: ${request.transactionSummary.totalIncome.toFixed(2)} ₽
+Расходы: ${Math.abs(request.transactionSummary.totalExpenses).toFixed(2)} ₽
+Баланс: ${request.transactionSummary.netBalance.toFixed(2)} ₽
 
-Период анализа: ${request.transactionSummary.period.start} - ${request.transactionSummary.period.end}
-Общий доход: ${request.transactionSummary.totalIncome.toFixed(2)} ₽
-Общие расходы: ${Math.abs(request.transactionSummary.totalExpenses).toFixed(2)} ₽
-Чистый баланс: ${request.transactionSummary.netBalance.toFixed(2)} ₽
-
-Основные расходы по категориям:
+Топ расходов:
 ${topCategories}
 
-${merchantsText ? `Топ продавцов по расходам:\n${merchantsText}` : ''}
+Задача:
+1. В начале ответа укажи, за какой период ты делаешь анализ.
+2. Кратко оцени финансовое состояние (1-2 предложения).
+3. Назови 3 основные проблемы с цифрами и % от дохода.
+4. Дай 3 практических совета с расчётом экономии в рублях.
+5. Укажи, на какой период времени ссылаешься в выводе.
 
-ВАЖНО - Инструкции к ответу:
-1. ФОКУС НА ФИНАНСОВОЙ ГРАМОТНОСТИ: Объясняй не только ЧТО делать, но и ПОЧЕМУ это важно для финансового здоровья.
-2. КОНКРЕТНЫЕ СОВЕТЫ: Давай 5-7 практических рекомендаций с конкретными примерами из данных пользователя.
-3. ОБУЧЕНИЕ: Включай краткие объяснения финансовых принципов (например, "правило 50/30/20", важность резервного фонда, эффект сложных процентов).
-4. ИЗБЕГАЙ: Не упоминай переводы между людьми, имена получателей, личные отношения. Фокусируйся на категориях расходов и паттернах поведения.
-5. ИЗМЕРИМЫЕ РЕЗУЛЬТАТЫ: Для каждой рекомендации укажи потенциальную экономию в рублях в месяц.
-6. ПРОСТЫЕ ДЕЙСТВИЯ: Каждая рекомендация должна иметь конкретный первый шаг, который можно сделать прямо сейчас.
-7. ИСПОЛЬЗУЙ РУССКИЕ НАЗВАНИЯ: Все категории, термины и рекомендации должны быть на русском языке.
-
-Формат ответа:
-- Краткий вывод о финансовом состоянии (2-3 предложения)
-- Список рекомендаций с обоснованием и потенциальной экономией
-- Краткий урок финансовой грамотности (1-2 абзаца)
-
-Напиши на русском языке, используй дружелюбный и обучающий тон.`;
+Формат: Итог, Проблемы, Советы, Быстрый шаг.
+Запрещено: не придумывать данные, не говорить про «сегодня» или «текущий месяц». Не используй символ доллара $ ни в каком виде. Все суммы указывай только в рублях с символом ₽. Ответь на русском.`;
   }
 
   private buildSpendingAnalysisPrompt(
     request: FinancialAnalysisRequest
   ): string {
     const recentTransactionsText = request.recentTransactions
-      .slice(0, 40)
-      .map(t => `${t.date}: ${t.description} (${t.category}) - ${Math.abs(t.amount)} ₽`)
+      .slice(0, 20)
+      .map(t => `${t.date.split('T')[0]}: ${t.description.substring(0, 40)} (${t.category}) - ${Math.abs(t.amount)} ₽`)
       .join('\n');
 
-    return `Проанализируй последние транзакции и выдели конкретные паттерны поведения:
+    return `Ты — финансовый аналитик. Ответь только на русском. Используй только эти транзакции и не добавляй ничего лишнего.
 
 ${recentTransactionsText}
 
-Прошу дать на русском языке:
-1) 3–5 повторяющихся паттернов (например: частые заправки, ежедневные доставки еды, регулярные мелкие платежи),
-2) Для каждого паттерна — почему это важно (финансовое влияние) и 1–2 практических шага, чтобы сократить расходы или улучшить привычку,
-3) Предложения, какие транзакции стоит проверить вручную (подписки, автоплатежи), и как это сделать.
+Задача:
+1. Найди 2-3 повторяющихся шаблона расходов.
+2. Для каждого напиши: категория/мерчант, ориентировочная сумма, конкретный совет по сокращению.
+3. Укажи одну категорию или подписку, которую стоит проверить вручную.
 
-Формат ответа: короткие пункты с ссылкой на категорию/мерчант и примерной оценкой экономии в рублях.
-Все категории называй на русском языке.`;
+Формат ответа:
+1) Паттерн: ...
+   - Сумма: ...
+   - Совет: ...
+2) Проверить: ...
+
+Ни слова на английском.`;
   }
 
-  private async callGroqAPI(prompt: string): Promise<string> {
+  private async callGigaChatAPI(prompt: string): Promise<string> {
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
+      const token = await this.getAccessToken();
+
+      const response = await axios.post(`${this.baseUrl}/chat/completions`, {
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 600,
+        stream: false,
+      }, {
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
+          'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: 'Ты - финансовый советник и аналитик. Помогай пользователю управлять его деньгами, предоставляя практические советы и анализ. ВСЕГДА отвечай на русском языке. Используй русские названия категорий расходов (Покупки, Еда, Транспорт, Развлечения и т.д.). Никогда не используй английские термины для категорий.',
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          temperature: 0.7,
-          max_tokens: 2000,
-        }),
+        httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
+        proxy: false
       });
 
-      if (!response.ok) {
-        let bodyText = await response.text();
-        try {
-          const json = JSON.parse(bodyText);
-          const errCode = json?.error?.code || json?.code;
-          const errMsg = json?.error?.message || json?.message || bodyText;
-          if (errCode === 'model_decommissioned') {
-            throw new Error(
-              `Groq API error: model_decommissioned - ${errMsg}.\nPlease set a supported model in your .env: GROQ_MODEL=<model_name>. See https://console.groq.com/docs/deprecations`
-            );
-          }
-          throw new Error(`Groq API error: ${response.status} - ${errMsg}`);
-        } catch (e) {
-          throw new Error(`Groq API error: ${response.status} - ${bodyText}`);
-        }
+      if (response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
+        return response.data.choices[0].message.content;
       }
 
-      const data = (await response.json()) as GroqResponse;
-
-      if (data.choices && data.choices[0]?.message?.content) {
-        return data.choices[0].message.content;
-      }
-
-      throw new Error('No response content from Groq API');
-    } catch (error) {
-      console.error('Error calling Groq API:', error);
+      throw new Error('No response content from GigaChat API');
+    } catch (error: any) {
+      console.error('Error calling GigaChat API:', error.response ? error.response.data : error.message);
       throw error;
     }
   }
 }
 
-export { GroqClient };
-export type { GroqConfig, FinancialAnalysisRequest, GroqResponse };
+export { GigaChatClient };
+export type { GigaChatConfig, FinancialAnalysisRequest, GroqResponse };

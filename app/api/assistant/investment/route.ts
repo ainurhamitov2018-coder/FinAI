@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { GroqClient } from "@/lib/groq-client";
+import { GigaChatClient } from "@/lib/groq-client";
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,15 +19,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.GIGACHAT_AUTH_KEY;
+    const baseUrl = process.env.GIGACHAT_BASE_URL || 'https://gigachat.devices.sberbank.ru/api/v1';
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Groq API key not configured" },
+        { error: "GigaChat auth key not configured" },
         { status: 500 }
       );
     }
 
-    const groq = new GroqClient({ apiKey });
+    const groq = new GigaChatClient({ 
+      authKey: apiKey,
+      baseUrl,
+      model: process.env.GIGACHAT_MODEL
+    });
 
     const advice = await groq.getInvestmentAdvice(
       availableMoney,
