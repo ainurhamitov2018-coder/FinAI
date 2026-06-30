@@ -71,39 +71,6 @@
    - Номер карты: `1111222233334444`
    - Пароль: `password123`
 
-## 📥 Загрузка данных из банковской выписки
-
-### Автоматическая загрузка
-
-После обновления файла `data.txt` выполните:
-
-```bash
-npm run update-data
-```
-
-Эта команда автоматически:
-1. Парсит `data.txt` → создает `scripts/out_parsed.json`
-2. Очищает старые транзакции из базы данных
-3. Удаляет накопительные счета
-4. Загружает новые транзакции в базу данных
-5. Обновляет баланс основного счета
-
-### Пошаговая инструкция
-
-#### 1. Парсинг данных
-```bash
-npm run parse
-# или
-node scripts/parse_transactions.js data.txt scripts/out_parsed.json
-```
-
-#### 2. Загрузка в базу данных
-```bash
-npm run load
-# или
-node scripts/load_parsed_data.js
-```
-
 ## 🏗️ Структура проекта
 
 ```
@@ -137,10 +104,6 @@ FinAI/
 │   ├── schema.prisma             # Схема БД
 │   ├── seed.ts                   # Сидеры
 │   └── migrations/               # Миграции
-├── scripts/                      # Скрипты обработки данных
-│   ├── parse_transactions.js     # Парсер банковских выписок
-│   ├── load_parsed_data.js       # Загрузчик данных в БД
-│   └── merchantMap.js            # Маппинг продавцов
 ├── types/                        # TypeScript типы
 └── README.md                     # Этот файл
 ```
@@ -206,9 +169,6 @@ FinAI/
 - `npm run db:push` - Применение схемы к БД
 - `npm run db:studio` - Открыть Prisma Studio
 - `npm run db:seed` - Заполнить БД тестовыми данными
-- `npm run parse` - Парсинг данных из data.txt
-- `npm run load` - Загрузка данных в БД
-- `npm run update-data` - Полный цикл обновления данных
 
 ### Переменные окружения
 ```env
@@ -235,7 +195,7 @@ GROQ_API_KEY="your-gigachat-api-key"
 
 ✅ **Обновляется:**
 - Баланс основного счета из `summary.endBalance`
-- Транзакции загружаются заново из `out_parsed.json`
+
 - ФИО в описаниях переводов маскируется (остается только "Фамилия И.")
 
 ## 🔐 Безопасность
@@ -298,12 +258,7 @@ FinAI/
 ├── prisma/               # Prisma схема и миграции
 │   ├── schema.prisma     # Схема базы данных
 │   └── migrations/       # Миграции
-├── scripts/              # Скрипты
-│   ├── parse_transactions.js  # Парсер банковских выписок
-│   ├── load_parsed_data.js   # Загрузка данных в БД
-│   └── merchantMap.js        # Маппинг категорий
 ├── types/                # TypeScript типы
-└── data.txt              # Банковская выписка (исходные данные)
 ```
 
 ## 🛠️ Разработка
@@ -315,24 +270,15 @@ FinAI/
 - `npm run start` - запуск production версии
 - `npm run lint` - проверка кода
 - `npm run db:studio` - открыть Prisma Studio
-- `npm run parse` - парсинг data.txt
-- `npm run load` - загрузка данных в БД
-- `npm run update-data` - полное обновление данных
+- `npm run db:seed` - заполнить БД тестовыми данными
 
-### Парсер банковских выписок
+### Переменные окружения
 
-Автоматически парсит банковские выписки в формате таблиц:
-
-```bash
-node scripts/parse_transactions.js data.txt output.json
+```env
+DATABASE_URL="file:./prisma/dev.db"
+JWT_SECRET="your-secret-key-change-in-production"
+GROQ_API_KEY="your-gigachat-api-key"
 ```
-
-**Результат:** JSON с полной информацией о всех операциях, включая:
-- Дата и время операции
-- Сумма и валюта
-- Тип (доход/расход)
-- Категория (автоматическая)
-- Описание операции (с маскировкой ФИО)
 
 ## 🎨 Дизайн
 

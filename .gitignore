@@ -43,14 +43,6 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Парсенные данные (можно оставить, но лучше генерировать заново)
-scripts/out_parsed.json
-
-# Проверочные скрипты (не нужны в репозитории)
-check-db.js
-fix-*.js
-merge-users.js
-
 # Vercel
 .vercel
 

@@ -6,8 +6,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { GigaChatClient } from "@/lib/groq-client";
-import fs from 'fs';
-import path from 'path';
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,12 +46,7 @@ export async function POST(request: NextRequest) {
       periodEnd = now;
     }
 
-    // Загружаем реальные данные
-    const parsedPath = path.resolve(process.cwd(), 'scripts', 'out_parsed.json');
     let parsed: any = null;
-    if (fs.existsSync(parsedPath)) {
-      try { parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8')); } catch (e) { parsed = null; }
-    }
 
     let expenses: Array<{ category: string; amount: number; percentage: number }> = [];
     let totalExpenses = 0;

@@ -11,10 +11,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts",
-    "parse": "node scripts/parse_transactions.js data.txt scripts/out_parsed.json",
-    "load": "node scripts/load_parsed_data.js",
-    "update-data": "npm run parse && npm run load"
+    "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.15.0",

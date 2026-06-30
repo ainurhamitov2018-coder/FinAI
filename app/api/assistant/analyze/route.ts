@@ -7,19 +7,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { GigaChatClient } from "@/lib/groq-client";
-import fs from 'fs';
-import path from 'path';
 
 export async function POST(request: NextRequest) {
   try {
     const { accountId, period = "month" } = await request.json();
 
-    // Попробуем загрузить распаршенную выписку из `scripts/out_parsed.json` (dev fallback)
-    const parsedPath = path.resolve(process.cwd(), 'scripts', 'out_parsed.json');
     let parsed: any = null;
-    if (fs.existsSync(parsedPath)) {
-      try { parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8')); } catch (e) { parsed = null; }
-    }
 
     const apiKey = process.env.GIGACHAT_AUTH_KEY;
     const baseUrl = process.env.GIGACHAT_BASE_URL || 'https://gigachat.devices.sberbank.ru/api/v1';
